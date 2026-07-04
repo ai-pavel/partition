@@ -15,12 +15,30 @@ jobs:
       - run: mix compile --warnings-as-errors
       - run: |
           set +e
-          mix test --cover
+          mix test --cover --export-coverage default
           rc=$?
           if [ $rc -eq 3 ]; then exit 0; fi
           exit $rc
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+      - name: Generate lcov coverage
+        run: |
+          mix run --no-start -e '
+            :cover.import(~c"cover/default.coverdata")
+            {:ok, f} = File.open("lcov.info", [:write])
+            for mod <- :cover.modules() do
+              source = mod |> to_string() |> String.replace_prefix("Elixir.", "")
+              path = source |> String.split(".") |> Enum.map(&Macro.underscore/1) |> Enum.join("/")
+              IO.write(f, "SF:lib/#{path}.ex\n")
+              case :cover.analyse(mod, :calls, :line) do
+                {:ok, lines} ->
+                  for {{_, line}, count} <- lines, do: IO.write(f, "DA:#{line},#{count}\n")
+                _ -> :ok
+              end
+              IO.write(f, "end_of_record\n")
+            end
+            File.close(f)
+          ' || true
+      - uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          files: lcov.info
           fail_ci_if_error: false
