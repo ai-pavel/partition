@@ -23,13 +23,22 @@ defmodule KVStore do
 
     results =
       Enum.map(nodes, fn node_id ->
-        Node.put(node_id, key, value, timestamp)
+        safe_put(node_id, key, value, timestamp)
       end)
 
     case Enum.find(results, &match?(:ok, &1)) do
       :ok -> :ok
       nil -> {:error, :all_nodes_failed}
     end
+  end
+
+  # Wraps Node.put/4 so that a dead or unresponsive replica (GenServer.call
+  # raising :exit with :noproc/:timeout) yields {:error, :node_down} instead
+  # of crashing the caller. A single downed replica must be survivable.
+  defp safe_put(node_id, key, value, timestamp) do
+    Node.put(node_id, key, value, timestamp)
+  catch
+    :exit, _reason -> {:error, :node_down}
   end
 
   @doc """
@@ -42,7 +51,7 @@ defmodule KVStore do
 
     results =
       nodes
-      |> Enum.map(fn node_id -> Node.get(node_id, key) end)
+      |> Enum.map(fn node_id -> safe_get(node_id, key) end)
       |> Enum.reject(&match?({:error, _}, &1))
 
     case results do
@@ -62,6 +71,14 @@ defmodule KVStore do
           {:ok, value}
         end
     end
+  end
+
+  # Wraps Node.get/2 so that a dead or unresponsive replica yields
+  # {:error, :node_down} (rejected downstream) instead of crashing the read.
+  defp safe_get(node_id, key) do
+    Node.get(node_id, key)
+  catch
+    :exit, _reason -> {:error, :node_down}
   end
 
   @doc """

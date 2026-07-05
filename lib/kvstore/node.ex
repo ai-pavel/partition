@@ -23,7 +23,7 @@ defmodule KVStore.Node do
   end
 
   @doc "Stores a key/value pair with the given timestamp."
-  @spec put(node_id(), String.t(), term(), integer()) :: :ok
+  @spec put(node_id(), String.t(), term(), integer()) :: :ok | {:error, term()}
   def put(node_id, key, value, timestamp) do
     GenServer.call(via(node_id), {:put, key, value, timestamp})
   end
