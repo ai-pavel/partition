@@ -83,4 +83,39 @@ defmodule KVStore.RingTest do
     count = Enum.count(ring, fn {_h, nid} -> nid == :v1 end)
     assert count == vnodes
   end
+
+  test "binary-search lookup agrees with a linear scan of the ring" do
+    Ring.add_node(:n1)
+    Ring.add_node(:n2)
+    Ring.add_node(:n3)
+
+    ring = Ring.ring()
+    rf = Application.get_env(:kvstore, :replication_factor, 3)
+
+    # Reference implementation: linear scan for the first vnode with
+    # hash >= key_hash, then walk collecting distinct physical nodes.
+    reference = fn key ->
+      key_hash = Ring.hash(key)
+      size = length(ring)
+
+      start_idx =
+        case Enum.find_index(ring, fn {h, _} -> h >= key_hash end) do
+          nil -> 0
+          idx -> idx
+        end
+
+      acc =
+        Enum.reduce(0..(size - 1), [], fn step, acc ->
+          {_h, nid} = Enum.at(ring, rem(start_idx + step, size))
+          if nid in acc, do: acc, else: [nid | acc]
+        end)
+
+      acc |> Enum.reverse() |> Enum.take(rf)
+    end
+
+    for i <- 1..50 do
+      key = "bench_key_#{i}"
+      assert Ring.preference_list(key) == reference.(key)
+    end
+  end
 end

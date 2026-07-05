@@ -119,29 +119,53 @@ defmodule KVStore.Ring do
 
   defp find_nodes(key, ring, n) do
     key_hash = hash(key)
-    ring_size = length(ring)
 
-    # Find the starting index: first vnode with hash >= key_hash
-    start_idx =
-      case Enum.find_index(ring, fn {h, _} -> h >= key_hash end) do
-        nil -> 0
-        idx -> idx
-      end
+    # The ring is a sorted list of {hash, node_id}. Convert it to a tuple
+    # once so element access is O(1), then binary-search for the first vnode
+    # with hash >= key_hash (wrapping to index 0 if the key hashes past the
+    # last vnode). This replaces the previous O(n) Enum.find_index start scan
+    # and the O(n) per-step Enum.at walk, making preference_list O(log n) plus
+    # a bounded successor traversal instead of O(n^2).
+    ring_tuple = List.to_tuple(ring)
+    ring_size = tuple_size(ring_tuple)
 
-    # Walk the ring collecting distinct physical nodes
-    collect_distinct_nodes(ring, start_idx, ring_size, n, [], 0)
+    start_idx = binary_search_start(ring_tuple, ring_size, key_hash)
+
+    collect_distinct_nodes(ring_tuple, start_idx, ring_size, n, [], 0)
   end
 
-  defp collect_distinct_nodes(_ring, _idx, _size, n, acc, _steps) when length(acc) >= n do
+  # Binary search for the index of the first vnode whose hash is >= key_hash.
+  # Returns 0 when key_hash is greater than every vnode hash (ring wrap-around).
+  defp binary_search_start(ring_tuple, size, key_hash) do
+    do_binary_search(ring_tuple, key_hash, 0, size - 1, size)
+  end
+
+  defp do_binary_search(_ring_tuple, _key_hash, lo, hi, size) when lo > hi do
+    # No vnode had hash >= key_hash within [lo, hi]; wrap to the start.
+    rem(lo, max(size, 1))
+  end
+
+  defp do_binary_search(ring_tuple, key_hash, lo, hi, size) do
+    mid = div(lo + hi, 2)
+    {h, _node_id} = elem(ring_tuple, mid)
+
+    if h >= key_hash do
+      do_binary_search(ring_tuple, key_hash, lo, mid - 1, size)
+    else
+      do_binary_search(ring_tuple, key_hash, mid + 1, hi, size)
+    end
+  end
+
+  defp collect_distinct_nodes(_ring_tuple, _idx, _size, n, acc, _steps) when length(acc) >= n do
     Enum.reverse(acc) |> Enum.take(n)
   end
 
-  defp collect_distinct_nodes(_ring, _idx, size, _n, acc, steps) when steps >= size do
+  defp collect_distinct_nodes(_ring_tuple, _idx, size, _n, acc, steps) when steps >= size do
     Enum.reverse(acc)
   end
 
-  defp collect_distinct_nodes(ring, idx, size, n, acc, steps) do
-    {_h, node_id} = Enum.at(ring, rem(idx, size))
+  defp collect_distinct_nodes(ring_tuple, idx, size, n, acc, steps) do
+    {_h, node_id} = elem(ring_tuple, rem(idx, size))
 
     new_acc =
       if node_id in acc do
@@ -150,7 +174,7 @@ defmodule KVStore.Ring do
         [node_id | acc]
       end
 
-    collect_distinct_nodes(ring, idx + 1, size, n, new_acc, steps + 1)
+    collect_distinct_nodes(ring_tuple, idx + 1, size, n, new_acc, steps + 1)
   end
 
   defp replication_factor do
