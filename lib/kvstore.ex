@@ -11,6 +11,7 @@ defmodule KVStore do
   """
 
   alias KVStore.{Ring, Node}
+  alias KVStore.CRDT.LWWRegister
 
   @doc """
   Stores a value under the given key, replicating to N nodes determined
@@ -49,17 +50,21 @@ defmodule KVStore do
       [] ->
         {:error, :not_found}
 
-      values ->
-        # Return the value with the highest timestamp (LWW)
-        {_ts, value} =
-          values
-          |> Enum.map(fn {:ok, lww} -> {lww.timestamp, lww.value} end)
-          |> Enum.max_by(fn {ts, _v} -> ts end)
+      [{:ok, first} | rest] ->
+        # Resolve the winner with the *same* rule the merge/convergence path
+        # uses (LWWRegister.merge/2): highest timestamp wins, ties broken by
+        # comparing inspect(value). Using max_by on the timestamp alone let
+        # equal-timestamp conflicts resolve arbitrarily, so a read could
+        # disagree with the value replicas eventually converge to.
+        winner =
+          Enum.reduce(rest, first, fn {:ok, reg}, acc ->
+            LWWRegister.merge(acc, reg)
+          end)
 
-        if value == :__tombstone__ do
+        if winner.value == :__tombstone__ do
           {:error, :not_found}
         else
-          {:ok, value}
+          {:ok, winner.value}
         end
     end
   end
