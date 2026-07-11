@@ -3,6 +3,7 @@ build/
 .gradle/
 .git/
 *.lock
+!mix.lock
 node_modules/
 .zig-cache/
 
