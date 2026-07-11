@@ -11,8 +11,9 @@ WORKDIR /app
 ENV MIX_ENV=prod
 COPY --from=build /app/_build/prod/ ./_build/prod/
 COPY --from=build /app/deps/ ./deps/
+COPY --from=build /root/.mix/ /root/.mix/
 COPY config/ config/
 COPY lib/ lib/
-COPY mix.exs ./
+COPY mix.exs mix.lock ./
 EXPOSE 4000
 CMD ["mix", "run", "--no-halt"]

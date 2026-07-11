@@ -19,13 +19,7 @@ defmodule KVStore.HTTP.Router do
 
   # Health check
   get "/health" do
-    nodes = KVStore.Ring.nodes()
-
-    json(conn, 200, %{
-      status: "ok",
-      nodes: length(nodes),
-      node_ids: Enum.map(nodes, &to_string/1)
-    })
+    json(conn, 200, Jason.OrderedObject.new(status: "ok", service: "distributed-kvstore"))
   end
 
   # Ring status
