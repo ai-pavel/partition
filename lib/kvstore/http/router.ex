@@ -19,7 +19,7 @@ defmodule KVStore.HTTP.Router do
 
   # Health check
   get "/health" do
-    json(conn, 200, Jason.OrderedObject.new(status: "ok", service: "distributed-kvstore"))
+    json(conn, 200, Jason.OrderedObject.new(status: "ok", service: "partition"))
   end
 
   # Ring status

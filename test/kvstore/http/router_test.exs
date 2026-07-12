@@ -78,7 +78,7 @@ defmodule KVStore.HTTP.RouterTest do
 
     assert conn.status == 200
     assert get_resp_header(conn, "content-type") |> hd() =~ "application/json"
-    assert json_body(conn) == %{"status" => "ok", "service" => "distributed-kvstore"}
+    assert json_body(conn) == %{"status" => "ok", "service" => "partition"}
   end
 
   test "/ring returns 200 with the node list shape" do
